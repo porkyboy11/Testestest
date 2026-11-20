@@ -15,15 +15,16 @@ function send(userId, payload) {
 function hasPermissions(required) {
     return required.filter((permission) => !spindle.permissions.has(permission));
 }
-async function getSettings() {
-    return spindle.storage.getJson(SETTINGS_PATH, {
+async function getSettings(userId) {
+    return spindle.userStorage.getJson(SETTINGS_PATH, {
         fallback: { sourceBookId: null, maxOutputTokens: DEFAULT_MAX_TOKENS },
+        userId,
     });
 }
-async function setSettings(patch) {
-    const current = await getSettings();
+async function setSettings(patch, userId) {
+    const current = await getSettings(userId);
     const next = { ...current, ...patch };
-    await spindle.storage.setJson(SETTINGS_PATH, next, { indent: 2 });
+    await spindle.userStorage.setJson(SETTINGS_PATH, next, { indent: 2, userId });
     return next;
 }
 async function listAllWorldBooks() {
@@ -140,11 +141,11 @@ function validateFullsheet(content, finishReason) {
         throw new Error('The response did not look like a BunnyMo character sheet. Nothing was saved. Check that the BunnyMo core lorebook is active in this chat.');
     }
 }
-async function saveBackup(chatId, entry) {
+async function saveBackup(chatId, entry, userId) {
     const safeChatId = chatId.replace(/[^a-zA-Z0-9_-]/g, '_');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const path = `backups/${safeChatId}/${stamp}.json`;
-    await spindle.storage.setJson(path, {
+    await spindle.userStorage.setJson(path, {
         backedUpAt: new Date().toISOString(),
         entryId: entry.id,
         comment: entry.comment,
@@ -157,7 +158,7 @@ async function saveBackup(chatId, entry) {
         selective: entry.selective,
         constant: entry.constant,
         disabled: entry.disabled,
-    }, { indent: 2 });
+    }, { indent: 2, userId });
 }
 async function generateFullsheet(userId) {
     const required = ['chats', 'chat_mutation', 'characters', 'generation', 'world_books'];
@@ -180,7 +181,7 @@ async function generateFullsheet(userId) {
         if (!Array.isArray(chatMessages) || chatMessages.length === 0) {
             throw new Error('This chat has no readable messages yet. Build some roleplay context before generating a sheet.');
         }
-        const settings = await getSettings();
+        const settings = await getSettings(userId);
         const books = await listAllWorldBooks();
         const sourceBook = detectSourceBook(books, settings.sourceBookId);
         if (!sourceBook) {
@@ -216,7 +217,7 @@ async function generateFullsheet(userId) {
             throw new Error('Lumiverse returned no assembled prompt for this chat.');
         }
         // Locate this chat's existing archive entry so its old profile is not fed back into its own analysis.
-        const index = await spindle.storage.getJson(INDEX_PATH, { fallback: {} });
+        const index = await spindle.userStorage.getJson(INDEX_PATH, { fallback: {}, userId });
         const record = index[chat.id];
         let oldEntry = null;
         if (record?.entryId)
@@ -281,7 +282,7 @@ async function generateFullsheet(userId) {
         const existing = managedEntries[0] ?? oldEntry;
         let savedEntry;
         if (existing) {
-            await saveBackup(chat.id, existing);
+            await saveBackup(chat.id, existing, userId);
             // Only update content. Existing activation keywords, position, role and other user settings survive.
             savedEntry = await spindle.world_books.entries.update(existing.id, { content });
         }
@@ -321,7 +322,7 @@ async function generateFullsheet(userId) {
                 updatedAt: new Date().toISOString(),
             },
         };
-        await spindle.storage.setJson(INDEX_PATH, nextIndex, { indent: 2 });
+        await spindle.userStorage.setJson(INDEX_PATH, nextIndex, { indent: 2 });
         send(userId, {
             type: 'bunnymo_done',
             chatId: chat.id,
@@ -340,7 +341,7 @@ async function getPanelState(userId) {
     const missing = hasPermissions(['chats', 'characters', 'world_books']);
     if (missing.length)
         return { missingPermissions: missing, books: [], chat: null };
-    const settings = await getSettings();
+    const settings = await getSettings(userId);
     const books = await listAllWorldBooks();
     let chat = null;
     let character = null;
@@ -414,7 +415,7 @@ spindle.onFrontendMessage(async (payload, userId) => {
             if (Number.isInteger(payload.maxOutputTokens)) {
                 patch.maxOutputTokens = Math.max(1000, Math.min(32000, payload.maxOutputTokens));
             }
-            await setSettings(patch);
+            await setSettings(patch, userId);
             send(userId, { type: 'bunnymo_settings_saved', state: await getPanelState(userId) });
             return;
         }
