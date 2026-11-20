@@ -27,11 +27,11 @@ async function setSettings(patch, userId) {
     await spindle.userStorage.setJson(SETTINGS_PATH, next, { indent: 2, userId });
     return next;
 }
-async function listAllWorldBooks() {
+async function listAllWorldBooks(userId) {
     const all = [];
     let offset = 0;
     while (true) {
-        const page = await spindle.world_books.list({ limit: 200, offset });
+        const page = await spindle.world_books.list({ limit: 200, offset, userId });
         all.push(...(page.data ?? []));
         if (all.length >= (page.total ?? 0) || !page.data?.length)
             break;
@@ -39,11 +39,11 @@ async function listAllWorldBooks() {
     }
     return all;
 }
-async function listAllEntries(bookId) {
+async function listAllEntries(bookId, userId) {
     const all = [];
     let offset = 0;
     while (true) {
-        const page = await spindle.world_books.entries.list(bookId, { limit: 200, offset });
+        const page = await spindle.world_books.entries.list(bookId, { limit: 200, offset, userId });
         all.push(...(page.data ?? []));
         if (all.length >= (page.total ?? 0) || !page.data?.length)
             break;
@@ -75,8 +75,8 @@ async function getActiveChatAndCharacter() {
         throw new Error('Could not retrieve the character card associated with this chat.');
     return { chat, character };
 }
-async function getArchiveBookForChat(chat, character) {
-    const books = await listAllWorldBooks();
+async function getArchiveBookForChat(chat, character, userId) {
+    const books = await listAllWorldBooks(userId);
     let archive = books.find((book) => book.metadata?.[EXTENSION_ID]?.managed === true
         && book.metadata?.[EXTENSION_ID]?.chatId === chat.id);
     if (!archive) {
@@ -182,7 +182,7 @@ async function generateFullsheet(userId) {
             throw new Error('This chat has no readable messages yet. Build some roleplay context before generating a sheet.');
         }
         const settings = await getSettings(userId);
-        const books = await listAllWorldBooks();
+        const books = await listAllWorldBooks(userId);
         const sourceBook = detectSourceBook(books, settings.sourceBookId);
         if (!sourceBook) {
             const candidates = books.filter(isBunnyMoBook).map((book) => book.name).join(', ');
@@ -190,7 +190,7 @@ async function generateFullsheet(userId) {
                 ? `More than one BunnyMo book was found (${candidates}). Open the BunnyMo drawer tab and select the core/main lorebook.`
                 : 'No BunnyMo lorebook was detected. Install the BunnyMo core lorebook in Lumiverse first, then refresh the BunnyMo panel.');
         }
-        const sourceEntries = await listAllEntries(sourceBook.id);
+        const sourceEntries = await listAllEntries(sourceBook.id, userId);
         const commandEntries = sourceEntries.filter((entry) => {
             const keys = Array.isArray(entry.key) ? entry.key : [];
             const hasCommand = /!fullsheet/i.test(String(entry.content ?? ''))
@@ -226,7 +226,7 @@ async function generateFullsheet(userId) {
             const existingArchiveBook = books.find((book) => book.metadata?.[EXTENSION_ID]?.managed === true
                 && book.metadata?.[EXTENSION_ID]?.chatId === chat.id);
             if (existingArchiveBook) {
-                const archiveEntries = await listAllEntries(existingArchiveBook.id);
+                const archiveEntries = await listAllEntries(existingArchiveBook.id, userId);
                 const matches = archiveEntries.filter((entry) => entry.extensions?.[EXTENSION_ID]?.managed === true
                     || (typeof entry.comment === 'string' && entry.comment.startsWith(`${ARCHIVE_MARKER} `)));
                 if (matches.length === 1)
@@ -272,8 +272,8 @@ async function generateFullsheet(userId) {
         const content = String(result?.content ?? '').trim();
         validateFullsheet(content, result?.finish_reason);
         send(userId, { type: 'bunnymo_status', status: 'archiving', message: 'Sheet validated. Updating this chat’s private archive…' });
-        const archiveBook = await getArchiveBookForChat(chat, character);
-        const entries = await listAllEntries(archiveBook.id);
+        const archiveBook = await getArchiveBookForChat(chat, character, userId);
+        const entries = await listAllEntries(archiveBook.id, userId);
         const managedEntries = entries.filter((entry) => entry.extensions?.[EXTENSION_ID]?.managed === true
             || (typeof entry.comment === 'string' && entry.comment.startsWith(`${ARCHIVE_MARKER} `)));
         if (managedEntries.length > 1) {
@@ -345,7 +345,7 @@ async function getPanelState(userId) {
     spindle.log.info(`[${EXTENSION_ID}] panel step: userStorage.getJson settings`);
     const settings = await getSettings(userId);
     spindle.log.info(`[${EXTENSION_ID}] panel step: world_books.list`);
-    const books = await listAllWorldBooks();
+    const books = await listAllWorldBooks(userId);
     let chat = null;
     let character = null;
     let archive = null;
