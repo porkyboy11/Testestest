@@ -72,11 +72,19 @@ export function setup(ctx) {
             emptyOption.value = '';
             select.appendChild(emptyOption);
             for (const book of latestState?.books ?? []) {
-                const option = el('option', '', book.name || 'Unnamed lorebook');
+                const label = `${book.name || 'Unnamed lorebook'}${book.attachedToCurrentContext ? ' · attached' : ''}${book.isBunnyMo ? ' · BunnyMo' : ''}`;
+                const option = el('option', '', label);
                 option.value = book.id;
                 select.appendChild(option);
             }
             select.value = latestState?.selectedSourceBookId || '';
+            if (!(latestState?.books ?? []).length) {
+                select.disabled = true;
+                sourceCard.appendChild(el('div', 'bm-muted', 'Lumiverse returned no world books for this extension. Check the world_books permission and reload the extension.'));
+            }
+            else if (latestState?.sourceBookHint) {
+                sourceCard.appendChild(el('div', 'bm-muted', latestState.sourceBookHint));
+            }
             select.addEventListener('change', () => {
                 ctx.sendToBackend({ type: 'bunnymo_save_settings', sourceBookId: select.value });
                 statusText = 'Saving BunnyMo source book…';
