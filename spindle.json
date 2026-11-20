@@ -6,7 +6,13 @@
   "github": "https://github.com/porkyboy11/Testestest",
   "homepage": "https://github.com/porkyboy11/Testestest",
   "description": "Run BunnyMo character analysis privately and archive the result per chat.",
-  "permissions": ["chats", "chat_mutation", "characters", "generation", "world_books"],
+  "permissions": [
+    "chats",
+    "chat_mutation",
+    "characters",
+    "generation",
+    "world_books"
+  ],
   "entry_backend": "dist/backend.js",
   "entry_frontend": "dist/frontend.js",
   "minimum_lumiverse_version": "0.1.0"
