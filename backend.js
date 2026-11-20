@@ -322,7 +322,7 @@ async function generateFullsheet(userId) {
                 updatedAt: new Date().toISOString(),
             },
         };
-        await spindle.userStorage.setJson(INDEX_PATH, nextIndex, { indent: 2 });
+        await spindle.userStorage.setJson(INDEX_PATH, nextIndex, { indent: 2, userId });
         send(userId, {
             type: 'bunnymo_done',
             chatId: chat.id,
