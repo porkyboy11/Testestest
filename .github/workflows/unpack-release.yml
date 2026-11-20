@@ -1,0 +1,27 @@
+name: Publish extension files
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  unpack:
+    if: contains(github.event.head_commit.message, 'Upload extension release bundle')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand extension into repository root
+        run: |
+          mkdir -p .release-unpack
+          unzip -q bunnymo-lumiverse-0.1.0.zip -d .release-unpack
+          cp -a .release-unpack/bunnymo-lumiverse/. .
+          rm -rf .release-unpack bunnymo-lumiverse-0.1.0.zip
+      - name: Commit installable extension files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish BunnyMo Lumiverse extension 0.1.0"
+            git push
+          fi
