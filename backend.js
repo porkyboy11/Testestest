@@ -338,10 +338,13 @@ async function generateFullsheet(userId) {
     }
 }
 async function getPanelState(userId) {
+    spindle.log.info(`[${EXTENSION_ID}] getPanelState entered; userId=${userId ? 'present' : 'MISSING'}`);
     const missing = hasPermissions(['chats', 'characters', 'world_books']);
     if (missing.length)
         return { missingPermissions: missing, books: [], chat: null };
+    spindle.log.info(`[${EXTENSION_ID}] panel step: userStorage.getJson settings`);
     const settings = await getSettings(userId);
+    spindle.log.info(`[${EXTENSION_ID}] panel step: world_books.list`);
     const books = await listAllWorldBooks();
     let chat = null;
     let character = null;
@@ -349,16 +352,20 @@ async function getPanelState(userId) {
     let globalIds = [];
     let activatedBookIds = [];
     try {
+        spindle.log.info(`[${EXTENSION_ID}] panel step: chats.getActive`);
         const active = await spindle.chats.getActive();
         if (active) {
             chat = active;
+            spindle.log.info(`[${EXTENSION_ID}] panel step: characters.get`);
             character = active.character_id ? await spindle.characters.get(active.character_id) : null;
             archive = books.find((book) => book.metadata?.[EXTENSION_ID]?.managed === true
                 && book.metadata?.[EXTENSION_ID]?.chatId === active.id) ?? null;
+            spindle.log.info(`[${EXTENSION_ID}] panel step: world_books.getGlobal`);
             globalIds = typeof spindle.world_books.getGlobal === 'function'
                 ? await spindle.world_books.getGlobal()
                 : [];
             if (typeof spindle.world_books.getActivated === 'function') {
+                spindle.log.info(`[${EXTENSION_ID}] panel step: world_books.getActivated`);
                 const activated = await spindle.world_books.getActivated(active.id, userId);
                 activatedBookIds = Array.from(new Set((activated ?? []).map((entry) => String(entry.bookId ?? '')).filter((id) => id.length > 0)));
             }
@@ -426,7 +433,7 @@ spindle.onFrontendMessage(async (payload, userId) => {
     }
     catch (error) {
         const message = errorMessage(error);
-        spindle.log.error(`[${EXTENSION_ID}] ${message}`);
+        spindle.log.error(`[${EXTENSION_ID}] ${message}; stack=${error instanceof Error ? error.stack : 'n/a'}`);
         send(userId, { type: 'bunnymo_error', message });
     }
 });
