@@ -211,7 +211,7 @@ async function generateFullsheet(userId) {
             return isKeylessMasterEntry || isFullsheetCommand;
         });
         send(userId, { type: 'bunnymo_status', status: 'assembling', message: `Found ${coreEntriesToInject.length} enabled BunnyMo core/master instructions. Assembling the native Lumiverse prompt…` });
-        const assembled = await spindle.generate.dryRun({ chatId: chat.id });
+        const assembled = await spindle.generate.dryRun({ chatId: chat.id }, userId);
         if (!assembled?.messages?.length) {
             throw new Error('Lumiverse returned no assembled prompt for this chat.');
         }
@@ -345,6 +345,8 @@ async function getPanelState(userId) {
     let chat = null;
     let character = null;
     let archive = null;
+    let globalIds = [];
+    let activatedBookIds = [];
     try {
         const active = await spindle.chats.getActive();
         if (active) {
@@ -352,22 +354,51 @@ async function getPanelState(userId) {
             character = active.character_id ? await spindle.characters.get(active.character_id) : null;
             archive = books.find((book) => book.metadata?.[EXTENSION_ID]?.managed === true
                 && book.metadata?.[EXTENSION_ID]?.chatId === active.id) ?? null;
+            globalIds = typeof spindle.world_books.getGlobal === 'function'
+                ? await spindle.world_books.getGlobal()
+                : [];
+            if (typeof spindle.world_books.getActivated === 'function') {
+                const activated = await spindle.world_books.getActivated(active.id, userId);
+                activatedBookIds = Array.from(new Set((activated ?? []).map((entry) => String(entry.bookId ?? '')).filter((id) => id.length > 0)));
+            }
         }
     }
     catch (error) {
-        spindle.log.warn(`BunnyMo panel state: ${errorMessage(error)}`);
+        spindle.log.warn(`BunnyMo panel context discovery: ${errorMessage(error)}`);
     }
-    const detected = detectSourceBook(books, settings.sourceBookId);
+    const characterBookIds = Array.isArray(character?.world_book_ids) ? character.world_book_ids : [];
+    const chatBookIds = Array.isArray(chat?.metadata?.chat_world_book_ids) ? chat.metadata.chat_world_book_ids : [];
+    const attachedIds = [...new Set([...characterBookIds, ...chatBookIds, ...globalIds, ...activatedBookIds])];
+    const attachedBooks = books.filter((book) => attachedIds.includes(book.id));
+    const candidates = books.filter(isBunnyMoBook);
+    const attachedBunnyMo = attachedBooks.filter(isBunnyMoBook);
+    const preferred = attachedBunnyMo.find((book) => /core|main|framework/i.test(book.name ?? ''))
+        ?? (attachedBunnyMo.length === 1 ? attachedBunnyMo[0] : null);
+    const configured = settings.sourceBookId ? books.find((book) => book.id === settings.sourceBookId) ?? null : null;
+    const detected = configured ?? preferred ?? detectSourceBook(books, null);
     return {
-        books: books.map((book) => ({ id: book.id, name: book.name, description: book.description })),
-        selectedSourceBookId: settings.sourceBookId || detected?.id || '',
+        books: books.map((book) => ({
+            id: book.id,
+            name: book.name,
+            description: book.description,
+            attachedToCurrentContext: attachedIds.includes(book.id),
+            isBunnyMo: isBunnyMoBook(book),
+        })),
+        attachedBookIds: attachedIds,
+        attachedBunnyMoBookIds: attachedBunnyMo.map((book) => book.id),
+        selectedSourceBookId: detected?.id || '',
         sourceBookDetected: Boolean(detected),
+        sourceBookHint: preferred ? `Detected attached BunnyMo book: ${preferred.name}`
+            : candidates.length === 0 ? 'No book name or description identifies BunnyMo. All available books are still listed.'
+                : attachedBunnyMo.length === 0 ? 'BunnyMo books exist, but none appear attached to this character, chat, or globally.'
+                    : 'Multiple attached BunnyMo books found. Select the core/main book.',
         chat: chat ? { id: chat.id, name: chat.name, characterName: character?.name ?? chat.name } : null,
         archiveBook: archive ? { id: archive.id, name: archive.name } : null,
         maxOutputTokens: settings.maxOutputTokens,
         missingPermissions: [],
     };
 }
+
 spindle.onFrontendMessage(async (payload, userId) => {
     if (!payload || typeof payload.type !== 'string')
         return;
